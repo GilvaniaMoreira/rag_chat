@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+langchain>=0.0.200
+langchain-community
+openai
+chromadb
+tqdm
+python-multipart
+streamlit
+pydantic
+pdfplumber
+python-dotenv
+requests
+langchain-openai
