@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    container_name: rag-chat-api
+    env_file: .env
+    volumes:
+      - ./storage:/app/storage
+      - ./chroma_db:/app/chroma_db
+    ports:
+      - "8000:8000"
+
+  streamlit:
+    build: .
+    container_name: rag-chat-streamlit
+    command: ["streamlit", "run", "web/streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    env_file: .env
+    environment:
+      - API_URL=http://api:8000/query
+    depends_on:
+      - api
+    volumes:
+      - ./storage:/app/storage
+      - ./chroma_db:/app/chroma_db
+    ports:
+      - "8501:8501"
