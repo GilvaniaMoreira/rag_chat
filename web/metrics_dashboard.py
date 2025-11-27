@@ -209,7 +209,7 @@ def main() -> None:
 
     export_params = {
         "data_type": export_type[0],
-        "format": export_format,
+        "export_format": export_format,
         "days": days,
     }
     if user_id_filter and export_type[0] == "queries":
