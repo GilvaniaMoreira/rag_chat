@@ -12,3 +12,4 @@ pdfplumber
 python-dotenv
 requests
 langchain-openai
+pandas

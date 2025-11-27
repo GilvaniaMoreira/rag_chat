@@ -7,3 +7,4 @@ storage/
 .streamlit/
 .DS_Store
 conversation_history.db
+metrics.db
