@@ -8,6 +8,7 @@ services:
     volumes:
       - ./storage:/app/storage
       - ./chroma_db:/app/chroma_db
+      - ./conversation_history.db:/app/conversation_history.db
     ports:
       - "8000:8000"
 
@@ -23,5 +24,6 @@ services:
     volumes:
       - ./storage:/app/storage
       - ./chroma_db:/app/chroma_db
+      - ./conversation_history.db:/app/conversation_history.db
     ports:
       - "8501:8501"

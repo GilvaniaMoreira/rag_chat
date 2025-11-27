@@ -40,10 +40,22 @@ def get_retriever(top_k: int = 4):
     return _vector_store().as_retriever(search_kwargs={"k": top_k})
 
 
-def _build_prompt() -> ChatPromptTemplate:
+def _build_prompt(include_history: bool = False) -> ChatPromptTemplate:
     """Return the chat prompt template used by the QA chain."""
-    return ChatPromptTemplate.from_messages(
-        [
+    if include_history:
+        # Template com histórico de conversas
+        messages = [
+            (
+                "system",
+                "Você é um assistente especialista em documentos. Use apenas as informações do contexto. "
+                "Se não encontrar a resposta, diga que não foi possível responder. "
+                "Use o histórico de conversas anteriores para dar respostas mais contextuais e consistentes.",
+            ),
+            ("human", "Histórico de conversas anteriores:\n{chat_history}\n\nContexto:\n{context}\n\nPergunta: {question}"),
+        ]
+    else:
+        # Template sem histórico
+        messages = [
             (
                 "system",
                 "Você é um assistente especialista em documentos. Use apenas as informações do contexto. "
@@ -51,7 +63,8 @@ def _build_prompt() -> ChatPromptTemplate:
             ),
             ("human", "Contexto:\n{context}\n\nPergunta: {question}"),
         ]
-    )
+    
+    return ChatPromptTemplate.from_messages(messages)
 
 
 class SimpleRetrievalQA:
@@ -64,14 +77,35 @@ class SimpleRetrievalQA:
 
     def invoke(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         question = inputs["query"]
+        conversation_history = inputs.get("chat_history", [])
         docs = self.retriever.invoke(question)
         context = "\n\n".join(doc.page_content for doc in docs)
-        messages = self.prompt.format_messages(context=context, question=question)
+        
+        # Formata o histórico de conversas se existir
+        chat_history_str = "Nenhuma conversa anterior."
+        if conversation_history:
+            history_parts = []
+            for msg in conversation_history:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role == "user":
+                    history_parts.append(f"Usuário: {content}")
+                elif role == "assistant":
+                    history_parts.append(f"Assistente: {content}")
+            if history_parts:
+                chat_history_str = "\n".join(history_parts)
+        
+        # Formata as mensagens do prompt
+        format_kwargs = {"context": context, "question": question}
+        if conversation_history:
+            format_kwargs["chat_history"] = chat_history_str
+        
+        messages = self.prompt.format_messages(**format_kwargs)
         answer = self.llm.invoke(messages).content
         return {"result": answer, "source_documents": docs}
 
 
-def get_qa_chain(top_k: int = 4) -> SimpleRetrievalQA:
+def get_qa_chain(top_k: int = 4, include_history: bool = False) -> SimpleRetrievalQA:
     """Return a retrieval QA pipeline built manually para compatibilidade."""
     llm = ChatOpenAI(
         model=os.getenv("OPENAI_COMPLETION_MODEL", "gpt-4o-mini"),
@@ -79,5 +113,5 @@ def get_qa_chain(top_k: int = 4) -> SimpleRetrievalQA:
         openai_api_key=os.getenv("OPENAI_API_KEY"),
     )
     retriever = get_retriever(top_k=top_k)
-    prompt = _build_prompt()
+    prompt = _build_prompt(include_history=include_history)
     return SimpleRetrievalQA(retriever=retriever, llm=llm, prompt=prompt)

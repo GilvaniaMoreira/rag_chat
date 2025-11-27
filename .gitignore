@@ -6,3 +6,4 @@ chroma_db/
 storage/
 .streamlit/
 .DS_Store
+conversation_history.db
