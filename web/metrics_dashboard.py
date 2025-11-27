@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from urllib.parse import urlencode
 from typing import Any, Dict, List
 
 import requests
@@ -184,6 +185,45 @@ def main() -> None:
                 st.info("Nenhum dado disponível")
         else:
             st.info("Nenhum documento encontrado")
+
+    st.divider()
+
+    # Exportação de métricas
+    st.header("📤 Exportar Métricas")
+    export_type = st.selectbox(
+        "Tipo de dado",
+        options=[
+            ("queries", "Consultas"),
+            ("errors", "Erros"),
+            ("documents", "Uso de Documentos"),
+        ],
+        format_func=lambda item: item[1],
+        index=0,
+    )
+    export_format = st.radio(
+        "Formato",
+        options=["json", "csv"],
+        format_func=lambda fmt: fmt.upper(),
+        horizontal=True,
+    )
+
+    export_params = {
+        "data_type": export_type[0],
+        "format": export_format,
+        "days": days,
+    }
+    if user_id_filter and export_type[0] == "queries":
+        export_params["user_id"] = user_id_filter
+
+    download_url = f"{API_BASE_URL}/metrics/export?{urlencode(export_params)}"
+    st.link_button(
+        f"Baixar {export_type[1]} em {export_format.upper()}",
+        download_url,
+        use_container_width=True,
+    )
+    st.caption(
+        "O download será iniciado em uma nova aba usando o endpoint de exportação da API."
+    )
 
     st.divider()
 

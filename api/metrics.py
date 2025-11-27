@@ -431,3 +431,159 @@ def get_time_series_data(
     finally:
         conn.close()
 
+
+def get_queries_raw(
+    user_id: Optional[str] = None,
+    days: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Retorna o histórico bruto de consultas."""
+    init_metrics_db()
+    conn = get_db_connection()
+    try:
+        where_clauses = []
+        params = []
+
+        if user_id:
+            where_clauses.append("user_id = ?")
+            params.append(user_id)
+
+        if days:
+            where_clauses.append("created_at >= datetime('now', '-' || ? || ' days')")
+            params.append(days)
+
+        where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+        rows = conn.execute(
+            f"""
+            SELECT 
+                id,
+                user_id,
+                question,
+                top_k,
+                response_time_ms,
+                success,
+                error_message,
+                sources_count,
+                created_at
+            FROM queries
+            {where_sql}
+            ORDER BY created_at DESC
+            """,
+            tuple(params),
+        ).fetchall()
+
+        return [
+            {
+                "id": row["id"],
+                "user_id": row["user_id"],
+                "question": row["question"],
+                "top_k": row["top_k"],
+                "response_time_ms": row["response_time_ms"],
+                "success": bool(row["success"]),
+                "error_message": row["error_message"],
+                "sources_count": row["sources_count"],
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+    finally:
+        conn.close()
+
+
+def get_errors_raw(
+    days: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Retorna o histórico bruto de erros."""
+    init_metrics_db()
+    conn = get_db_connection()
+    try:
+        where_clause = ""
+        params = []
+
+        if days:
+            where_clause = "WHERE created_at >= datetime('now', '-' || ? || ' days')"
+            params.append(days)
+
+        rows = conn.execute(
+            f"""
+            SELECT
+                id,
+                user_id,
+                endpoint,
+                error_type,
+                error_message,
+                status_code,
+                created_at
+            FROM errors
+            {where_clause}
+            ORDER BY created_at DESC
+            """,
+            tuple(params),
+        ).fetchall()
+
+        return [
+            {
+                "id": row["id"],
+                "user_id": row["user_id"],
+                "endpoint": row["endpoint"],
+                "error_type": row["error_type"],
+                "error_message": row["error_message"],
+                "status_code": row["status_code"],
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+    finally:
+        conn.close()
+
+
+def get_document_usage_raw(
+    days: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Retorna o uso de documentos em nível de consulta."""
+    init_metrics_db()
+    conn = get_db_connection()
+    try:
+        join_clause = "LEFT JOIN queries q ON du.query_id = q.id"
+        where_clause = ""
+        params = []
+
+        if days:
+            where_clause = "WHERE q.created_at >= datetime('now', '-' || ? || ' days')"
+            params.append(days)
+
+        rows = conn.execute(
+            f"""
+            SELECT
+                du.id,
+                du.query_id,
+                du.source_path,
+                du.page,
+                du.created_at,
+                q.user_id,
+                q.question,
+                q.created_at AS query_created_at
+            FROM document_usage du
+            {join_clause}
+            {where_clause}
+            ORDER BY du.created_at DESC
+            """,
+            tuple(params),
+        ).fetchall()
+
+        return [
+            {
+                "id": row["id"],
+                "query_id": row["query_id"],
+                "user_id": row["user_id"],
+                "question": row["question"],
+                "source_path": row["source_path"],
+                "page": row["page"],
+                "created_at": row["created_at"],
+                "query_created_at": row["query_created_at"],
+            }
+            for row in rows
+        ]
+    finally:
+        conn.close()
+

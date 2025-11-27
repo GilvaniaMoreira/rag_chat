@@ -1,13 +1,17 @@
 """FastAPI application exposing the RAG query endpoint."""
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import time
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.base import BaseHTTPMiddleware
+from fastapi.responses import JSONResponse, Response
 
 from .chroma_client import get_qa_chain
 from .history import (
@@ -16,7 +20,10 @@ from .history import (
     save_conversation,
 )
 from .metrics import (
+    get_document_usage_raw,
     get_error_stats,
+    get_errors_raw,
+    get_queries_raw,
     get_query_stats,
     get_time_series_data,
     get_top_documents,
@@ -36,16 +43,22 @@ logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="RAG Chat PDFs", version="1.0.0")
 
 
+def _serialize_to_csv(records: list[dict[str, object]], fieldnames: list[str]) -> str:
+    """Serialize metric records to CSV string."""
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for record in records:
+        writer.writerow({field: record.get(field) for field in fieldnames})
+    return output.getvalue()
+
+
 class MetricsMiddleware(BaseHTTPMiddleware):
     """Middleware para capturar métricas de requisições HTTP."""
 
     async def dispatch(self, request: Request, call_next):
-        start_time = time.time()
-        
         try:
             response = await call_next(request)
-            process_time = (time.time() - start_time) * 1000  # em milissegundos
-            
             # Registra erros se o status code for >= 400
             if response.status_code >= 400:
                 try:
@@ -61,7 +74,6 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             
             return response
         except Exception as exc:
-            process_time = (time.time() - start_time) * 1000
             # Registra exceção não tratada
             try:
                 record_error(
@@ -274,6 +286,72 @@ async def get_time_series_metrics(
     except Exception as exc:
         logger.exception("Erro ao recuperar séries temporais")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/metrics/export")
+async def export_metrics_data(
+    data_type: Literal["queries", "errors", "documents"] = Query(
+        "queries", description="Tipo de dado para exportar"
+    ),
+    export_format: Literal["json", "csv"] = Query(
+        "json", description="Formato do arquivo de saída"
+    ),
+    user_id: str | None = Query(
+        None,
+        description="Filtra por usuário (aplicável apenas para exportação de consultas)",
+    ),
+    days: int = Query(30, ge=1, le=365, description="Número de dias para considerar"),
+) -> Response:
+    """Exporta métricas em formatos CSV ou JSON."""
+    try:
+        if data_type == "queries":
+            records = get_queries_raw(user_id=user_id, days=days)
+            fieldnames = [
+                "id",
+                "user_id",
+                "question",
+                "top_k",
+                "response_time_ms",
+                "success",
+                "error_message",
+                "sources_count",
+                "created_at",
+            ]
+        elif data_type == "errors":
+            records = get_errors_raw(days=days)
+            fieldnames = [
+                "id",
+                "user_id",
+                "endpoint",
+                "error_type",
+                "error_message",
+                "status_code",
+                "created_at",
+            ]
+        else:
+            records = get_document_usage_raw(days=days)
+            fieldnames = [
+                "id",
+                "query_id",
+                "user_id",
+                "question",
+                "source_path",
+                "page",
+                "created_at",
+                "query_created_at",
+            ]
+    except Exception as exc:
+        logger.exception("Erro ao preparar exportação de métricas")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    filename = f"{data_type}_metrics_{days}d.{export_format}"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+
+    if export_format == "json":
+        return JSONResponse(content=records, headers=headers)
+
+    csv_content = _serialize_to_csv(records, fieldnames)
+    return Response(content=csv_content, media_type="text/csv", headers=headers)
 
 
 if __name__ == "__main__":
